@@ -4,8 +4,8 @@ name: Bolt10
 physics_engine: ${..physics_engine} # 'physx'
 
 env:
-  numEnvs: ${resolve_default:128,${...num_envs}}
-  numObservations: 42
+  numEnvs: ${resolve_default:1024,${...num_envs}}
+  numObservations: 182
   numActions: 10
   envSpacing: 3.  # [m]
   enableDebugVis: False
@@ -37,15 +37,15 @@ env:
   randomCommandVelocityRanges:
     # train
     linear_x: [-0.5, 0.5] # min max [m/s]
-    linear_y: [-0., 0.]   # min max [m/s]
-    yaw: [-1.0, 1.0]    # min max [rad/s] # [-0.0, 0.0]
+    linear_y: [-0.5, 0.5]   # min max [m/s]
+    yaw: [-0.0, 0.0]    # min max [rad/s] # [-0.0, 0.0]
 
   control:
     # PD Drive parameters:
     stiffness: 5.6 # [N*m/rad]
     damping: 2.5    # [N*m*s/rad]
     # action scale: target angle = actionScale * action + defaultAngle
-    actionScale: 0.6
+    actionScale: 0.9 # 1.
     # decimation: Number of control action updates @ sim DT per policy DT
     decimation: 4 # 40hz
     # controlFrequencyInv: 1 # 60 Hz
@@ -53,25 +53,14 @@ env:
   defaultJointAngles:  # = target angles when action = 0.0
     L_HipYaw_Joint: 0.0     # [rad]
     L_HipRoll_Joint: 0.0    # [rad]
-    L_HipPitch_Joint: -0.3  # [rad]
-    L_KneePitch_Joint: 0.6  # [rad]
-    L_AnklePitch_Joint: -0.3 # [rad]
-    R_HipYaw_Joint: 0.0     # [rad]
+    L_HipPitch_Joint: 0.  # [rad]
+    L_KneePitch_Joint: 0.  # [rad]
+    L_AnklePitch_Joint: 0. # [rad]
+    R_HipYaw_Joint: 0.    # [rad]
     R_HipRoll_Joint: 0.0    # [rad]
-    R_HipPitch_Joint: -0.3  # [rad]
-    R_KneePitch_Joint: 0.6  # [rad]
-    R_AnklePitch_Joint: -0.3 # [rad]
-    
-    # L_HipYaw_Joint: 0.1    # [rad]
-    # L_HipRoll_Joint: 0.05   # [rad]
-    # L_HipPitch_Joint: 0.0    # [rad]
-    # L_KneePitch_Joint: 0.2  # [rad]
-    # L_AnklePitch_Joint: -0.15   # [rad]
-    # R_HipYaw_Joint: 0.1    # [rad]
-    # R_HipRoll_Joint: -0.05    # [rad]
-    # R_HipPitch_Joint: 0.0    # [rad]
-    # R_KneePitch_Joint: 0.2    # [rad]
-    # R_AnklePitch_Joint: -0.15     # [rad]
+    R_HipPitch_Joint: 0.  # [rad]
+    R_KneePitch_Joint: 0.  # [rad]
+    R_AnklePitch_Joint: 0. # [rad]
 
   urdfAsset:
     file: "urdf/bolt10/urdf/bolt10.urdf"
@@ -82,48 +71,37 @@ env:
     defaultDofDriveMode: 4 # see GymDofDriveModeFlags (0 is none, 1 is pos tgt, 2 is vel tgt, 4 effort)
 
   learn:
+    termination_height: 0.3
+    desired_knee_distance: 0.3
     allowKneeContacts: True 
-    terminalReward: -0.5
-    linearVelocityXYRewardScale: 1.0
-    linearVelocityZRewardScale: -1.0
-    angularVelocityXYRewardScale: -0.1
-    angularVelocityZRewardScale: -0.1
-    orientationRewardScale: -1.0
-    torqueRewardScale: -0.0001
-    jointAccRewardScale: -0.005
-    baseHeightRewardScale: 0.0
-    feetAirTimeRewardScale: 0.1
-    kneeCollisionRewardScale: -1.0
-    feetStumbleRewardScale: 0.0
-    actionRateRewardScale: -0.01
-    hipRewardScale: -0.1
-    forwardRewardScale: 1.0
-    balanceRewardScale: 0.5
-    # allowKneeContacts: True
-    # # rewards
-    # terminalReward: 0.0
-    # linearVelocityXYRewardScale: 2.0
-    # linearVelocityZRewardScale: -2.0
-    # angularVelocityXYRewardScale: -0.1 #-0.05
-    # angularVelocityZRewardScale: -0.1 #0.5
-    # orientationRewardScale: 0.0 #-1.
-    # torqueRewardScale: -0.0001 # -0.000025
-    # jointAccRewardScale: -0.002 # -0.0025
-    # baseHeightRewardScale: -0.0 #5
-    # feetAirTimeRewardScale:  0.0
-    # kneeCollisionRewardScale: -0.1
-    # feetStumbleRewardScale: -1.0 #-2.0
-    # actionRateRewardScale: -0.01
-    # hipRewardScale: -0.0 #25
-    # forwardRewardScale: 1.25
-    # balanceRewardScale: 1.0
+    
+    #negative for penalty, positive for reward
+    terminalReward: 0.0
+    linearVelocityXYRewardScale: 10.0
+    linearVelocityZRewardScale: -2.0 # neg
+    angularVelocityXYRewardScale: -0.1 # neg
+    angularVelocityZRewardScale: -0.0 
+    orientationRewardScale: -1.0 # neg
+    torqueRewardScale: -0.0001 # neg
+    jointAccRewardScale: -0.005 # neg
+    baseHeightRewardScale: -1.5 # neg
+    feetAirTimeRewardScale: 1.0
+    kneeCollisionRewardScale: -1.0 # neg
+    feetStumbleRewardScale: -0.5 # neg
+    actionRateRewardScale: -0.01 # neg
+    hipRewardScale: -0.0
+    noflyRewardScale: 1.0
+    ####New#####
+    forwardRewardScale: 2.0
+    balanceRewardScale: 2.0
+    kneeangleRewardScale: -2.0
 
     # normalization
-    linearVelocityScale: 0.5
-    angularVelocityScale: 0.0
+    linearVelocityScale: 1.0 # 2.0
+    angularVelocityScale: 0.0 # 0.0
     dofPositionScale: 1.0
     dofVelocityScale: 0.05
-    heightMeasurementScale: 5.0
+    heightMeasurementScale: 1.0 # 5.0
 
     # noise 
     addNoise: false

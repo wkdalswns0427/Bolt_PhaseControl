@@ -45,17 +45,52 @@ from rl_games.common import vecenv
 
 import torch
 from torch import optim
+import torch.nn as nn
+import torch.nn.functional as F
 
 from . import amp_datasets as amp_datasets
 
 from tensorboardX import SummaryWriter
 
+# class MirrorSymmetryLoss(nn.Module):
+#     def __init__(self, action_pairing: str = "consecutive"):
+#         """
+#         Initialize MirrorSymmetryLoss.
+
+#         Parameters:
+#         action_pairing (str): Method of pairing actions. Default is "consecutive".
+#                               Options include "consecutive" or other custom pairings.
+#         """
+#         super(MirrorSymmetryLoss, self).__init__()
+#         self.action_pairing = action_pairing
+
+#     def forward(self, actions: torch.Tensor) -> torch.Tensor:
+#         """
+#         Calculate mirror symmetry loss.
+
+#         Parameters:
+#         actions (torch.Tensor): Tensor containing actions. Shape (batch_size, num_actions).
+
+#         Returns:
+#         torch.Tensor: Calculated mirror symmetry loss.
+#         """
+#         try:
+#             # Assuming actions are paired consecutively
+#             left_actions = actions[:, ::2]
+#             right_actions = actions[:, 1::2]
+#             symmetry_loss = F.mse_loss(left_actions, right_actions)
+#         except:
+#             # Custom action pairing can be added here
+#             symmetry_loss = 0
+#             raise ValueError(f"Unsupported action pairing: {self.action_pairing}")
+#         return symmetry_loss
 
 class CommonAgent(a2c_continuous.A2CAgent):
 
     def __init__(self, base_name, params):
     
         a2c_common.A2CBase.__init__(self, base_name, params)
+        # self.mirror_symmetry_loss = MirrorSymmetryLoss()
 
         config = params['config']
         self._load_config_params(config)
@@ -354,6 +389,7 @@ class CommonAgent(a2c_continuous.A2CAgent):
             c_loss = c_info['critic_loss']
 
             b_loss = self.bound_loss(mu)
+            # ms_loss = self.mirror_symmetry_loss(actions_batch)
 
             losses, sum_mask = torch_ext.apply_masks([a_loss.unsqueeze(1), c_loss, entropy.unsqueeze(1), b_loss.unsqueeze(1)], rnn_masks)
             a_loss, c_loss, entropy, b_loss = losses[0], losses[1], losses[2], losses[3]
