@@ -85,7 +85,6 @@ class Bolt10(VecTask):
         self.dof_vel_scale = self.cfg["env"]["learn"]["dofVelocityScale"]
         self.height_meas_scale = self.cfg["env"]["learn"]["heightMeasurementScale"]
         self.action_scale = self.cfg["env"]["control"]["actionScale"]
-
         # command ranges
         self.command_x_range = self.cfg["env"]["randomCommandVelocityRanges"]["linear_x"]
         self.command_y_range = self.cfg["env"]["randomCommandVelocityRanges"]["linear_y"]
@@ -112,7 +111,6 @@ class Bolt10(VecTask):
         self.Kd = self.cfg["env"]["control"]["damping"]
         self.curriculum = self.cfg["env"]["terrain"]["curriculum"]
         self.termination_height = self.cfg["env"]["learn"]["termination_height"]
-        self.desired_knee_distance = self.cfg["env"]["learn"]["desired_knee_distance"]
 
         self.rew_scales = {}
         self.rew_scales["termination"] = self.cfg["env"]["learn"]["terminalReward"] 
@@ -123,13 +121,15 @@ class Bolt10(VecTask):
         self.rew_scales["orient"] = self.cfg["env"]["learn"]["orientationRewardScale"] 
         self.rew_scales["torque"] = self.cfg["env"]["learn"]["torqueRewardScale"]
         self.rew_scales["joint_acc"] = self.cfg["env"]["learn"]["jointAccRewardScale"]
-        self.rew_scales["base_height"] = self.cfg["env"]["learn"]["baseHeightRewardScale"]
+        self.rew_scales["base_height_H"] = self.cfg["env"]["learn"]["baseHeightRewardScaleH"]
+        self.rew_scales["base_height_L"] = self.cfg["env"]["learn"]["baseHeightRewardScaleL"]
         self.rew_scales["air_time"] = self.cfg["env"]["learn"]["feetAirTimeRewardScale"]
         self.rew_scales["collision"] = self.cfg["env"]["learn"]["kneeCollisionRewardScale"]
         self.rew_scales["stumble"] = self.cfg["env"]["learn"]["feetStumbleRewardScale"]
         self.rew_scales["action_rate"] = self.cfg["env"]["learn"]["actionRateRewardScale"]
         self.rew_scales["hip"] = self.cfg["env"]["learn"]["hipRewardScale"]
         self.rew_scales["nofly"] = self.cfg["env"]["learn"]["noflyRewardScale"]
+        self.rew_scales["symmetry"] = self.cfg["env"]["learn"]["symmetryRewardScale"]
         # self.rew_scales["forward"] = self.cfg["env"]["learn"]["forwardRewardScale"]
         # self.rew_scales["balance"] = self.cfg["env"]["learn"]["balanceRewardScale"]
         # self.rew_scales["knee_angle"] = self.cfg["env"]["learn"]["kneeangleRewardScale"]
@@ -171,6 +171,7 @@ class Bolt10(VecTask):
         self.actions = torch.zeros(self.num_envs, self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
         self.last_actions = torch.zeros(self.num_envs, self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
         self.feet_air_time = torch.zeros(self.num_envs, 2, dtype=torch.float, device=self.device, requires_grad=False)
+        self.last_contacts = torch.zeros(self.num_envs, len(self.feet_indices), dtype=torch.bool, device=self.device, requires_grad=False)
         self.last_dof_vel = torch.zeros_like(self.dof_vel)
 
         self.height_points = self.init_height_points()
@@ -186,20 +187,19 @@ class Bolt10(VecTask):
         self.reset_idx(torch.arange(self.num_envs, device=self.device))
         self.init_done = True
 
-        input_size = self.cfg["env"]["numObservations"] + self.cfg["env"]["numActions"]  # Observation size + action size
-        hidden_size1 = 256  # Example hidden size, adjust based on your requirements
-        hidden_size2 = 128
-        output_size = 12  # Example output size, adjust based on your task
+        # input_size = self.cfg["env"]["numObservations"] + self.cfg["env"]["numActions"]  # Observation size 42 + action size 10
+        # hidden_size1 = 256  # Example hidden size, adjust based on your requirements
+        # hidden_size2 = 128
+        # output_size = 12  # Example output size, adjust based on your task
 
-        self.adaptation_module = AdaptationModule(input_size=input_size, hidden_size=hidden_size1, output_size=output_size).to(self.device)
-        self.env_factor_encoder = EnvironmentFactorEncoder(input_size=input_size, hidden_size1=hidden_size1, hidden_size2=hidden_size2, output_size=output_size).to(self.device)
-        self.optimizer = optim.Adam(list(self.adaptation_module.parameters()) + list(self.env_factor_encoder.parameters()), lr=0.001)
+        # self.adaptation_module = AdaptationModule(input_size=input_size, hidden_size=hidden_size1, output_size=output_size).to(self.device)
+        # self.env_factor_encoder = EnvironmentFactorEncoder(input_size=input_size, hidden_size1=hidden_size1, hidden_size2=hidden_size2, output_size=output_size).to(self.device)
+        # self.optimizer = optim.Adam(list(self.adaptation_module.parameters()) + list(self.env_factor_encoder.parameters()), lr=0.001)
 
-        self.history = torch.zeros(self.num_envs, 10, input_size, device=self.device)  # Initialize history of observations and actions
+        # self.history = torch.zeros(self.num_envs, 10, input_size, device=self.device)  # Initialize history of observations and actions
         
-        self.left_knee_idx = self.dof_names.index('L_KneePitch_Joint')  # Update with actual name from URDF
-        self.right_knee_idx = self.dof_names.index('R_KneePitch_Joint')  # Update with actual name from URDF
-
+        # self.left_knee_idx = self.dof_names.index('L_KneePitch_Joint')  # Update with actual name from URDF
+        # self.right_knee_idx = self.dof_names.index('R_KneePitch_Joint')  # Update with actual name from URDF
 
     def create_sim(self):
         self.up_axis_idx = 2
@@ -345,66 +345,95 @@ class Bolt10(VecTask):
         self.reset_buf = torch.where(self.progress_buf >= self.max_episode_length - 1, torch.ones_like(self.reset_buf), self.reset_buf)
 
     def compute_observations(self):
-        self.measured_heights = self.get_heights()
-        heights = torch.clip(self.root_states[:, 2].unsqueeze(1) - 0.5 - self.measured_heights, -1, 1.) * self.height_meas_scale
-        self.obs_buf = torch.cat((self.base_lin_vel * self.lin_vel_scale,
-                                  self.base_ang_vel * self.ang_vel_scale,
-                                  self.projected_gravity,
-                                  self.commands[:, :3] * self.commands_scale,
-                                  self.dof_pos * self.dof_pos_scale,
-                                  self.dof_vel * self.dof_vel_scale,
-                                  heights,
-                                  self.actions), dim=-1)
+    #     self.measured_heights = self.get_heights()
+    #     heights = torch.clip(self.root_states[:, 2].unsqueeze(1) - 0.5 - self.measured_heights, -1, 1.) * self.height_meas_scale
+        self.obs_buf = torch.cat((self.base_lin_vel * self.lin_vel_scale, # 3
+                                  self.base_ang_vel * self.ang_vel_scale, # 3
+                                  self.projected_gravity, # 3
+                                  self.commands[:, :3] * self.commands_scale, # 3
+                                  self.dof_pos * self.dof_pos_scale, # 10
+                                  self.dof_vel * self.dof_vel_scale, # 10
+                                #   heights, # 140
+                                  self.actions), dim=-1) # 10
 
-    def compute_reward(self):
+    def _reward_linvel(self):
         lin_vel_error = torch.sum(torch.square(self.commands[:, :2] - self.base_lin_vel[:, :2]), dim=1)
+        return torch.exp(-lin_vel_error / 0.25) * self.rew_scales["lin_vel_xy"], torch.square(self.base_lin_vel[:, 2]) * self.rew_scales["lin_vel_z"]
+    
+    def _reward_angvel(self):
         ang_vel_error = torch.square(self.commands[:, 2] - self.base_ang_vel[:, 2])
-        rew_lin_vel_xy = torch.exp(-lin_vel_error / 0.25) * self.rew_scales["lin_vel_xy"]
-        rew_ang_vel_z = torch.exp(-ang_vel_error / 0.25) * self.rew_scales["ang_vel_z"]
+        return torch.sum(torch.square(self.base_ang_vel[:, :2]), dim=1) * self.rew_scales["ang_vel_xy"], torch.exp(-ang_vel_error / 0.25) * self.rew_scales["ang_vel_z"]
 
-        rew_lin_vel_z = torch.square(self.base_lin_vel[:, 2]) * self.rew_scales["lin_vel_z"]
-        rew_ang_vel_xy = torch.sum(torch.square(self.base_ang_vel[:, :2]), dim=1) * self.rew_scales["ang_vel_xy"]
-
-        rew_orient = torch.sum(torch.square(self.projected_gravity[:, :2]), dim=1) * self.rew_scales["orient"]
-        rew_base_height = torch.square(self.root_states[:, 2] - 0.52) * self.rew_scales["base_height"]
-
-        rew_torque = torch.sum(torch.square(self.torques), dim=1) * self.rew_scales["torque"]
-        rew_joint_acc = torch.sum(torch.square(self.last_dof_vel - self.dof_vel), dim=1) * self.rew_scales["joint_acc"]
-
+    def _reward_orientation(self):
+        return torch.sum(torch.square(self.projected_gravity[:, :2]), dim=1) * self.rew_scales["orient"]
+    
+    def _reward_baseheight(self):
+        mask = self.root_states[:, 2] < 0.4
+        high_reward = torch.square(self.root_states[:, 2] - 0.52) * self.rew_scales["base_height_H"]
+        low_reward = torch.square(self.root_states[:, 2] - 0.47) * self.rew_scales["base_height_L"]
+        rew_base_height = torch.where(mask, high_reward, low_reward)
+        return torch.where(mask, high_reward, low_reward)
+    
+    def _reward_torque(self):
+        return torch.sum(torch.square(self.torques), dim=1) * self.rew_scales["torque"]
+    
+    def _reward_joint_acc(self):
+        return torch.sum(torch.square(self.last_dof_vel - self.dof_vel), dim=1) * self.rew_scales["joint_acc"]
+    
+    def _reward_collision(self):
         knee_contact = torch.norm(self.contact_forces[:, self.knee_indices, :], dim=2) > 1.0
-        rew_collision = torch.sum(knee_contact, dim=1) * self.rew_scales["collision"]
+        return torch.sum(knee_contact, dim=1) * self.rew_scales["collision"]
 
+    def _reward_stumble(self):
         stumble = (torch.norm(self.contact_forces[:, self.feet_indices, :2], dim=2) > 5.0) * (torch.abs(self.contact_forces[:, self.feet_indices, 2]) < 1.0)
-        rew_stumble = torch.sum(stumble, dim=1) * self.rew_scales["stumble"]
-
-        rew_action_rate = torch.sum(torch.square(self.last_actions - self.actions), dim=1) * self.rew_scales["action_rate"]
-
-        contact = self.contact_forces[:, self.feet_indices, 2] > 1.0
-        first_contact = (self.feet_air_time > 0.0) * contact
+        return torch.sum(stumble, dim=1) * self.rew_scales["stumble"]
+    
+    def _reward_actionrate(self):
+        return torch.sum(torch.square(self.last_actions - self.actions), dim=1) * self.rew_scales["action_rate"]
+    
+    def _reward_airtime(self):
+        # contact = self.contact_forces[:, self.feet_indices, 2] > 1.0
+        # first_contact = (self.feet_air_time > 0.0) * contact
+        # self.feet_air_time += self.dt
+        # rew_airTime = torch.sum((self.feet_air_time - 0.5) * first_contact, dim=1) * self.rew_scales["air_time"]
+        # rew_airTime *= torch.norm(self.commands[:, :2], dim=1) > 0.1
+        # self.feet_air_time *= ~contact
+        contacts = self.contact_forces[:, self.feet_indices, 2] > 1.0
+        mt_single_contact = torch.sum(1.*contacts, dim=1) >0
+        contact_filt = torch.logical_or(contacts, self.last_contacts) 
+        self.last_contacts = contacts
+        first_contact = (self.feet_air_time > 0.) * contact_filt
         self.feet_air_time += self.dt
-        rew_airTime = torch.sum((self.feet_air_time - 0.5) * first_contact, dim=1) * self.rew_scales["air_time"]
-        rew_airTime *= torch.norm(self.commands[:, :2], dim=1) > 0.1
-        self.feet_air_time *= ~contact
+        rew_airTime = torch.sum( torch.clip(self.feet_air_time - 0.3, min=0.0, max=0.7) * first_contact, dim=1) * self.rew_scales["air_time"] # reward only on first contact with the ground
+        rew_airTime *= torch.norm(self.commands[:, :3], dim=1) > 0.1 #no reward for zero command
+        rew_airTime *= mt_single_contact #no reward for flying or double support
+        self.feet_air_time *= ~contact_filt
+        return rew_airTime
 
-        rew_forward = self.commands[:, 0] * self.base_lin_vel[:, 0] * self.rew_scales["forward"]
-        rew_balance = -torch.norm(self.base_ang_vel[:, :2], dim=1) * self.rew_scales["balance"]
-
-        # Check if both feet are off the ground
-        feet_contact_forces = self.contact_forces[:, self.feet_indices, 2]
-        feet_off_ground = torch.sum(feet_contact_forces > 1.0, dim=1) < 2
-        rew_nofly = feet_off_ground * self.rew_scales["nofly"]
+    def _reward_nofly(self):
+        contacts = self.contact_forces[:, self.feet_indices, 2] > 1.0
+        single_contact = torch.sum(1.*contacts, dim=1)==1
+        single_contact *= torch.norm(self.commands[:, :3], dim=1) > 0.1
+        return 1.*single_contact * self.rew_scales["nofly"]
+    
+    def compute_reward(self):
+        rew_lin_vel_xy, rew_lin_vel_z = self._reward_linvel()
+        rew_ang_vel_xy, rew_ang_vel_z = self._reward_angvel()
+        rew_orient = self._reward_orientation()
+        rew_base_height = self._reward_baseheight()
+        rew_torque = self._reward_torque()
+        rew_joint_acc = self._reward_joint_acc()
+        rew_collision = self._reward_collision()
+        rew_stumble = self._reward_stumble()
+        rew_action_rate = self._reward_actionrate()
+        rew_airTime = self._reward_airtime()
+        rew_nofly = self._reward_nofly()
 
         self.rew_buf = rew_lin_vel_xy + rew_ang_vel_z + rew_lin_vel_z + rew_ang_vel_xy + rew_orient + rew_base_height + \
-                       rew_torque + rew_joint_acc + rew_collision + rew_action_rate + rew_airTime + rew_stumble + rew_nofly #+\ rew_kneeangle#+ rew_forward#+ rew_balance
+                       rew_torque + rew_joint_acc + rew_collision + rew_action_rate + rew_airTime + rew_stumble + rew_nofly #+ rew_symmetry #rew_kneeangle#+ rew_forward#+ rew_balance
         self.rew_buf = torch.clip(self.rew_buf, min=0.0, max=None)
 
         self.rew_buf += self.rew_scales["termination"] * self.reset_buf * ~self.timeout_buf
-
-        # Log rewards every 10 epochs
-        # if self.epoch % 10 == 0:
-        #     np_rew = self.rew_buf.cpu().detach().numpy()
-        #     df = pd.DataFrame(np_rew)
-        #     df.to_csv(f"/home/dyros/IssacGym/IsaacGymBolt/isaacgymenvs/tasks/logs/log{self.epoch}.csv", index=False)
 
         for key in self.episode_sums.keys():
             self.episode_sums[key] += self.rew_buf
@@ -465,10 +494,11 @@ class Bolt10(VecTask):
 
     def pre_physics_step(self, actions):
         self.actions = actions.clone().to(self.device)
-
-        obs_action = torch.cat((self.obs_buf, self.actions), dim=-1)
-        self.history = torch.cat((self.history[:, 1:], obs_action.unsqueeze(1)), dim=1)
-        z = self.adaptation_module(self.history)
+        # obs_action = torch.cat((self.obs_buf, self.actions), dim=-1)
+        # self.history = torch.cat((self.history[:, 1:], obs_action.unsqueeze(1)), dim=1)
+        # z = self.adaptation_module(self.history)
+        # symmetry_loss = self.compute_symmetry_loss(self.actions)
+        # self.extras["symmetry_loss"] = symmetry_loss
 
         for i in range(self.decimation):
             torques = torch.clip(self.Kp * (self.action_scale * self.actions + self.default_dof_pos - self.dof_pos) - self.Kd * self.dof_vel, -3.5, 3.5)
@@ -568,35 +598,6 @@ class Bolt10(VecTask):
 
         return heights.view(self.num_envs, -1) * self.terrain.vertical_scale
     
-    # def initialize_subplots(self):
-    #     """ Initialize the subplots for live updates. """
-    #     self.fig, self.axs = plt.subplots(2, 5, figsize=(15, 6))
-    #     self.lines = []
-    #     for i in range(2):
-    #         for j in range(5):
-    #             line, = self.axs[i, j].plot([], [], label=f'Torque {i*5 + j}')
-    #             # self.axs[i, j].set_xlim(0, 100)  # Adjust x-axis limit as needed
-    #             self.axs[i, j].set_ylim(-10, 10)  # Adjust y-axis limit as needed
-    #             self.axs[i, j].set_xlabel('Iteration')
-    #             self.axs[i, j].set_ylabel('Torque')
-    #             self.axs[i, j].legend()
-    #             self.lines.append(line)
-    #     plt.ion()  # Turn on interactive mode
-    #     plt.show()
-
-    # def update_subplots(self, iteration, torque_data):
-    #     """ Update the subplots with new data. """
-    #     for i in range(10):
-    #         line = self.lines[i]
-    #         xdata = np.append(line.get_xdata(), iteration)
-    #         ydata = np.append(line.get_ydata(), torque_data[i])
-    #         line.set_xdata(xdata)
-    #         line.set_ydata(ydata)
-    #         ax = self.axs[i // 5, i % 5]
-    #         ax.set_xlim(0, max(100, iteration))  # Adjust x-axis limit as needed
-    #     self.fig.canvas.draw()
-    #     self.fig.canvas.flush_events()
-    #     plt.pause(0.001)  # Pause to ensure the plot gets updated
 
 from isaacgym.terrain_utils import *
 class Terrain:

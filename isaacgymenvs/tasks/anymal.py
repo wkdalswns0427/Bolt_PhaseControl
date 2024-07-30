@@ -27,7 +27,7 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import numpy as np
-import os, logging
+import os
 import torch
 
 from isaacgym import gymtorch
@@ -78,6 +78,7 @@ class Anymal(VecTask):
         v_lin = self.cfg["env"]["baseInitState"]["vLinear"]
         v_ang = self.cfg["env"]["baseInitState"]["vAngular"]
         state = pos + rot + v_lin + v_ang
+
         self.base_init_state = state
 
         # default joint positions
