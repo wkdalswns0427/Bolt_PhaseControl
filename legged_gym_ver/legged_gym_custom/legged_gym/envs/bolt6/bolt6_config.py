@@ -193,20 +193,20 @@ class Bolt6Cfg( LeggedRobotCfg ):
         thickness = 0.01
 
     class domain_rand:
-        randomize_friction = False # Randomizes dof shape friction. Simulated ground friction is the mean of shape friction and terrain friction
+        randomize_friction = True # Randomizes dof shape friction. Simulated ground friction is the mean of shape friction and terrain friction
         friction_range = [0.5, 1.25]
-        randomize_base_mass = False
+        randomize_base_mass = True
         added_mass_range = [-.3, .3]
-        push_robots = False
+        push_robots = True
         push_interval_s = 3
         max_push_vel_xy = .5    
         ext_force_robots = True
         ext_force_randomize_interval_s = 5
         ext_force_direction_range = (0, 2*3.141592)
-        ext_force_scale_range = (-10, 10)
+        ext_force_scale_range = (-5, 5)
         ext_force_interval_s = 2
         ext_force_duration_s = [0.3, 0.7]
-        randomize_dof_friction = False
+        randomize_dof_friction = True
         dof_friction_interval_s = 5
         dof_friction = [0, 0.03] # https://forums.developer.nvidia.com/t/possible-bug-in-joint-friction-value-definition/208631
         dof_damping = [0, 0.003]
@@ -239,7 +239,7 @@ class Bolt6Cfg( LeggedRobotCfg ):
             torques = -5.e-7 # -5.e-7
             dof_vel = -1.e-3
             dof_acc = -2.e-7 # -2.e-7
-            action_rate = -0.0001 # -0.000001
+            action_rate = -0.001 # -0.000001
 
             # walking specific rewards
             feet_air_time = 0.
@@ -247,7 +247,8 @@ class Bolt6Cfg( LeggedRobotCfg ):
             feet_stumble = -0.0 
             stand_still = 0.0
             no_fly = 0.0
-            feet_contact_forces = -1.
+            feet_contact_forces = -3.
+            energy = -0.1
             
             # joint limits
             torque_limits = -0.01
@@ -261,13 +262,13 @@ class Bolt6Cfg( LeggedRobotCfg ):
 
             # PBRS rewards
             ori_pb = 5.0
-            baseHeight_pb = 1.0 #3.
+            baseHeight_pb = 3.0 #3.
             # jointReg_pb = 3.0
             action_rate_pb = 0.0
 
             stand_still_pb = 1.0
             no_fly_pb = 4.0
-            feet_air_time_pb = 3. # 2.
+            feet_air_time_pb = 4. # 2.
 
     class normalization:
         class obs_scales:
