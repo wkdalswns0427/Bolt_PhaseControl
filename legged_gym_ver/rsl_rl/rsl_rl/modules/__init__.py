@@ -28,6 +28,6 @@
 #
 # Copyright (c) 2021 ETH Zurich, Nikita Rudin
 
-from .on_policy_runner import OnPolicyRunner
-from .on_policy_runner_sym import OnPolicyRunnerSym
-from .on_policy_runner_history import OnPolicyRunnerHistory
+from .actor_critic import ActorCritic
+from .actor_critic_recurrent import ActorCriticRecurrent
+from .state_estimator import StateEstimator

@@ -29,7 +29,7 @@
 # Copyright (c) 2021 ETH Zurich, Nikita Rudin
 
 from legged_gym.envs.base.legged_robot_config import LeggedRobotCfg, LeggedRobotCfgPPO
-
+mesh_type = 'plane' # "heightfield" # none, plane, heightfield or trimesh
 class Bolt6Cfg( LeggedRobotCfg ):
     class env( LeggedRobotCfg.env):
         num_envs = 4096 # robot count 4096
@@ -57,7 +57,7 @@ class Bolt6Cfg( LeggedRobotCfg ):
         self.friction_coeffs: torch.Size([4096, 1])
         self.dof_props['friction']: torch.Size([4096, 6])
         self.dof_props['damping']: torch.Size([4096, 6])
-        self.measured_heights: torch.Size([4096, 36])
+        self.measured_heights: torch.Size([4096, 36]) #
         
         24 + 3 + 3 + 2 + 3 + 3 + 1 + 6 + 6 + 81 = 130
         '''
@@ -67,7 +67,7 @@ class Bolt6Cfg( LeggedRobotCfg ):
         episode_length_s = 10 # episode length in seconds
 
     class terrain( LeggedRobotCfg.terrain):
-        mesh_type = 'plane' # "heightfield" # none, plane, heightfield or trimesh
+        mesh_type = mesh_type # "heightfield" # none, plane, heightfield or trimesh
         horizontal_scale = 0.1 # [m]
         vertical_scale = 0.001 # [m]
         border_size = 25 # [m]
@@ -100,9 +100,13 @@ class Bolt6Cfg( LeggedRobotCfg ):
         heading_command = False # if true: compute ang vel command from heading error
         
         class ranges( LeggedRobotCfg.commands.ranges ):
-            lin_vel_x = [-0.8, 0.8] # min max [m/s] seems like less than or equal to 0.2 it sends 0 command
-            lin_vel_y = [-0.8, 0.8]   # min max [m/s]
-            ang_vel_yaw = [-1., 1.]    # min max [rad/s]
+            # lin_vel_x = [-0.8, 0.8] # min max [m/s] seems like less than or equal to 0.2 it sends 0 command
+            # lin_vel_y = [-0.8, 0.8]   # min max [m/s]
+            # ang_vel_yaw = [-1., 1.]    # min max [rad/s]
+            # heading = [-3.14, 3.14]
+            lin_vel_x = [0.4, 0.4] # min max [m/s] seems like less than or equal to 0.2 it sends 0 command
+            lin_vel_y = [-0., 0.]   # min max [m/s]
+            ang_vel_yaw = [-0., 0.]    # min max [rad/s]
             heading = [-3.14, 3.14]
             
 
@@ -194,21 +198,21 @@ class Bolt6Cfg( LeggedRobotCfg ):
 
     class domain_rand:
         randomize_friction = True # Randomizes dof shape friction. Simulated ground friction is the mean of shape friction and terrain friction
-        friction_range = [0.5, 1.25]
-        randomize_base_mass = True
-        added_mass_range = [-.3, .3]
-        push_robots = True
+        friction_range = [0.05, 3.0] #[0.2, 1.5]
+        randomize_base_mass = False
+        added_mass_range = [-.5, .5]
+        push_robots = False
         push_interval_s = 3
         max_push_vel_xy = .5    
-        ext_force_robots = True
+        ext_force_robots = False
         ext_force_randomize_interval_s = 5
         ext_force_direction_range = (0, 2*3.141592)
-        ext_force_scale_range = (-5, 5)
+        ext_force_scale_range = (-10, 10)
         ext_force_interval_s = 2
         ext_force_duration_s = [0.3, 0.7]
-        randomize_dof_friction = True
+        randomize_dof_friction = False
         dof_friction_interval_s = 5
-        dof_friction = [0, 0.03] # https://forums.developer.nvidia.com/t/possible-bug-in-joint-friction-value-definition/208631
+        dof_friction = [0, 0.1] # https://forums.developer.nvidia.com/t/possible-bug-in-joint-friction-value-definition/208631
         dof_damping = [0, 0.003]
         
         
@@ -236,10 +240,10 @@ class Bolt6Cfg( LeggedRobotCfg ):
             ang_vel_xy = -0.0
             
             # regulation in joint space
-            torques = -5.e-7 # -5.e-7
-            dof_vel = -1.e-3
-            dof_acc = -2.e-7 # -2.e-7
-            action_rate = -0.001 # -0.000001
+            torques = 0. # -5.e-7
+            dof_vel = 0 #-1.e-3
+            dof_acc = 0 #-2.e-7 # -2.e-7
+            action_rate = 0 #-0.001 # -0.000001
 
             # walking specific rewards
             feet_air_time = 0.
@@ -247,8 +251,8 @@ class Bolt6Cfg( LeggedRobotCfg ):
             feet_stumble = -0.0 
             stand_still = 0.0
             no_fly = 0.0
-            feet_contact_forces = -3.
-            energy = -0.1
+            feet_contact_forces = -5. #10?
+            energy = -1e-1
             
             # joint limits
             torque_limits = -0.01
@@ -262,8 +266,8 @@ class Bolt6Cfg( LeggedRobotCfg ):
 
             # PBRS rewards
             ori_pb = 5.0
-            baseHeight_pb = 3.0 #3.
-            # jointReg_pb = 3.0
+            baseHeight_pb = 2.0 #3.
+            jointReg_pb =1.5
             action_rate_pb = 0.0
 
             stand_still_pb = 1.0
@@ -288,7 +292,7 @@ class Bolt6Cfg( LeggedRobotCfg ):
 
     class noise:
         add_noise = True
-        noise_level = 1.0 # scales other values
+        noise_level = 2.0 # scales other values
         class noise_scales:
             dof_pos = 0.005
             dof_vel = 0.01
@@ -326,11 +330,12 @@ class Bolt6Cfg( LeggedRobotCfg ):
 
 class Bolt6CfgPPO( LeggedRobotCfgPPO ):
     seed = 1
-    runner_class_name = 'OnPolicyRunnerHistory'
+    runner_class_name = 'OnPolicyRunnerHistoryEst'
     class policy:
         init_noise_std = 1.0
         actor_hidden_dims =[512, 256, 128]# 
         critic_hidden_dims = [512, 256, 128]#
+        state_estimator_hiden_size = [256,128, 64]
         activation = 'elu' # can be elu, relu, selu, crelu, lrelu, tanh, sigmoid
         # only for 'ActorCriticRecurrent':
         # rnn_type = 'lstm'
@@ -355,10 +360,11 @@ class Bolt6CfgPPO( LeggedRobotCfgPPO ):
         
         # Symmetric loss
         mirror = {'HipPitch': (1,4), 
-                        'KneePitch': (2,5), 
-                        } # Joint pairs that need to be mirrored
+                  'KneePitch': (2,5), 
+                } # Joint pairs that need to be mirrored
         mirror_neg = {'HipRoll': (0,3), } # Joint pairs that need to be mirrored and signs must be changed
         mirror_weight = 0.5
+        estimation_weight = 1.0
         # The following lists indicate the ranges in the observation vector indices, for which specific mirroring method should applied
         # For example, cartesian_angular_mirror = [(0,3), (6,12)] indicate that the cartesian angular mirror operation should be applied
         # to the 0th~2nd, and the 6th~8th, 9th~11th elements of the observation vector.
@@ -372,13 +378,13 @@ class Bolt6CfgPPO( LeggedRobotCfgPPO ):
         
     class runner( LeggedRobotCfgPPO.runner ):
         policy_class_name = 'ActorCritic'
-        algorithm_class_name = 'PPO_sym'
+        algorithm_class_name = 'PPO_sym_est'
         num_steps_per_env = 24 # per iteration
-        max_iterations = 5000 # number of policy updates
+        max_iterations = 10000 # number of policy updates
         
         # Optional. Choose the length of state history for the algorithm to use.
-        history_len = 5
-        critic_history_len = 1
+        history_len = 10
+        critic_history_len = 10
 
         # logging
         save_interval = 1000 # check for potential saves every this many iterations

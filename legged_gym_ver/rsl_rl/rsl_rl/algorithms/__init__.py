@@ -30,3 +30,5 @@
 
 from .ppo import PPO
 from .ppo_sym import PPO_sym
+from .ppo_est import PPO_est
+from .ppo_sym_est import PPO_sym_est

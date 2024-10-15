@@ -54,8 +54,10 @@ class Bolt6(LeggedRobot):
         if self.num_privileged_obs is not None:
             self.dof_props = torch.zeros((self.num_dofs, 2), device=self.device, dtype=torch.float) # includes dof friction (0) and damping (1) for each environment
     
+    # penalize energy usage
     def _reward_energy(self):
-        return -torch.mean(torch.matmul(self.torques,self.dof_vel.T), dim=1)
+        return torch.sum(self.torques * self.dof_vel, dim=-1)
+        # return -torch.mean(torch.matmul(self.torques,self.dof_vel.T), dim=1)
     
     def _reward_no_fly(self):
         contacts = self.contact_forces[:, self.feet_indices, 2] > 0.001
@@ -397,6 +399,9 @@ class Bolt6(LeggedRobot):
             self.torques = self._compute_torques(self.actions).view(self.torques.shape) 
             self.gym.set_dof_actuation_force_tensor(self.sim, gymtorch.unwrap_tensor(self.torques)) 
             self.gym.simulate(self.sim)
+            print("------------TORQUES------------")
+            print(self.torques)
+            print("-------------------------------")
             
             # ## set custom state DEBUGGING
             # self.dof_pos[:, :] = 5

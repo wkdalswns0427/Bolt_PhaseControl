@@ -40,6 +40,7 @@ from legged_gym.utils.helpers import set_seed
 
 import numpy as np
 import torch
+history_len = 1
 
 def deque_to_tensor(buffer : deque) -> torch.Tensor:
     if not buffer:
@@ -74,9 +75,51 @@ def write_tensor_to_txt(tensor, file_path, precision):
             row_str = ' '.join(map(lambda x: f"{x:.{precision}f}", row))
             file.write(row_str + '\n')
 
+def convert_txt(log_root,resume_dir):
+    MODEL_DIR = os.path.join(log_root, resume_dir[-1],"model_3000.pt")
+    model = torch.load(MODEL_DIR, map_location=torch.device('cpu'))
+    model_state_dict = model['model_state_dict']
 
+    # Define the mappings for reshaping and filenames
+    print(f"history len : {history_len}")
+    file_mapping = {
+        'actor.0.weight': '0_weight.txt',
+        'actor.0.bias': '0_bias.txt',
+        'actor.2.weight': '2_weight.txt',
+        'actor.2.bias': '2_bias.txt',
+        'actor.4.weight': '4_weight.txt',
+        'actor.4.bias': '4_bias.txt',
+        'actor.6.weight': '6_weight.txt',
+        'actor.6.bias': '6_bias.txt',
+    }
+
+    reshape_mapping = {
+        'actor.0.weight': (512, 240),
+        'actor.0.bias': (512, 1),
+        'actor.2.weight': (256, 512),
+        'actor.2.bias': (256, 1),
+        'actor.4.weight': (128, 256),
+        'actor.4.bias': (128, 1),
+        'actor.6.weight': (6, 128),
+        'actor.6.bias': (6, 1),
+    }
+
+    # Save the reshaped components to .txt files
+    for key, filename in file_mapping.items():
+        component = np.reshape(model_state_dict[key].numpy(), reshape_mapping[key])
+
+        SAVE_DIR = os.path.join(log_root, resume_dir[-1], 'data', filename)
+        np.savetxt(SAVE_DIR, component)
+
+    print("Files have been generated successfully.")
 
 def custom_play(args):
+    command_x = []
+    base_vel_x = []
+    command_y = []
+    base_vel_y = []
+    command_yaw = []
+    base_vel_yaw = []
     if args.task in task_registry.task_classes:
         registry = task_registry
     elif args.task in custom_task_registry.task_classes:
@@ -88,13 +131,13 @@ def custom_play(args):
     env_cfg.terrain.num_rows = 5
     env_cfg.terrain.num_cols = 5
     env_cfg.terrain.curriculum = False
-    env_cfg.terrain.mesh_type = 'plane'
+    env_cfg.terrain.mesh_type = 'plane' #plane
     env_cfg.noise.add_noise = True
     env_cfg.domain_rand.randomize_friction = False
     env_cfg.domain_rand.push_robots = False
-    env_cfg.domain_rand.ext_force_robots = True
-    env_cfg.domain_rand.ext_force_vector_6d_range = [(-0,0), (4.8,4.8), (0, 0), (-0,0), (-0,0), (-0,0)]
-    env_cfg.domain_rand.ext_force_duration_s = [.5, .5]
+    env_cfg.domain_rand.ext_force_robots = False
+    env_cfg.domain_rand.ext_force_vector_6d_range = [(-0,0), (1.2,1.2), (0, 0), (-0,0), (-0,0), (-0,0)]
+    env_cfg.domain_rand.ext_force_duration_s = [.2, .2]
     env_cfg.env.episode_length_s = 20
     if args.speed is not None:
         env_cfg.commands.num_commands = 4
@@ -129,13 +172,13 @@ def custom_play(args):
     logger = Logger(env.dt)
     robot_index = 0 # which robot is used for logging
     joint_index = 1 # which joint is used for logging
-    start_state_log = np.ceil(4. / env.dt) 
-    stop_state_log = np.ceil(6. / env.dt) # number of steps before plotting states
+    start_state_log = np.ceil(2. / env.dt) 
+    stop_state_log = np.ceil(4. / env.dt) # number of steps before plotting states
     stop_rew_log = env.max_episode_length + 1 # number of steps before print average episode rewards
-    # camera_position = np.array(env_cfg.viewer.pos, dtype=float64)
+    # camera_position = np.array(env_cfg.viewer.pos, dtype=np.float64)
     # camera_vel = np.array([1., 1., 0.])
     # camera_direction = np.array(env_cfg.viewer.lookat) - np.array(env_cfg.viewer.pos)
-    camera_direction = np.array([3,3, 3])
+    camera_direction = np.array([1,1,1])
     img_idx = 0
     
     # SAVE_DIR = 'play_plot.png'
@@ -147,6 +190,8 @@ def custom_play(args):
     open('data.txt', 'w')
     env.curriculum_index = 1
     set_seed(142142)
+
+    convert_txt(log_root, resume_dir)
     for i in range(3*int(env.max_episode_length)):
         # obs_history.append(obs)
         # obs_history.append(torch.ones_like(obs) * (-1.))
@@ -208,91 +253,6 @@ def custom_play(args):
             logger.print_rewards()
                 
 
-# def play(args):
-#     env_cfg, train_cfg = task_registry.get_cfgs(name=args.task)
-#     # override some parameters for testing
-#     env_cfg.env.num_envs = min(env_cfg.env.num_envs, 5)
-#     env_cfg.terrain.num_rows = 5
-#     env_cfg.terrain.num_cols = 5
-#     env_cfg.terrain.curriculum = False
-#     env_cfg.noise.add_noise = True
-#     env_cfg.domain_rand.randomize_friction = False
-#     env_cfg.domain_rand.push_robots = False
-#     env_cfg.domain_rand.ext_force_robots = False
-#     env_cfg.env.episode_length_s = 20
-    
-#     if args.speed is not None:
-#         env_cfg.commands.num_commands = 4
-#         env_cfg.commands.heading_command = True        
-#         env_cfg.commands.ranges.lin_vel_x = [args.speed, args.speed]
-#         env_cfg.commands.ranges.lin_vel_y = [0., 0.]
-#         env_cfg.commands.ranges.heading = [0.,0.]
-
-#     # prepare environment
-#     env, _ = task_registry.make_env(name=args.task, args=args, env_cfg=env_cfg)
-#     obs = env.get_observations()
-        
-#     # load policy
-#     train_cfg.runner.resume = True
-#     ppo_runner, train_cfg = task_registry.make_alg_runner(env=env, name=args.task, args=args, train_cfg=train_cfg) # env is reset here
-#     policy = ppo_runner.get_inference_policy(device=env.device)
-    
-#     # export policy as a jit module (used to run it from C++)
-#     if EXPORT_POLICY:
-#         path = os.path.join(LEGGED_GYM_ROOT_DIR, 'logs', train_cfg.runner.experiment_name, 'exported', 'policies')
-#         export_policy_as_jit(ppo_runner.alg.actor_critic, path)
-#         print('Exported policy as jit script to: ', path)
-
-#     logger = Logger(env.dt)
-#     robot_index = 0 # which robot is used for logging
-#     joint_index = 1 # which joint is used for logging
-#     start_state_log = np.ceil(4. / env.dt)
-#     stop_state_log =np.ceil(7. / env.dt) # number of steps before plotting states
-#     stop_rew_log = env.max_episode_length + 1 # number of steps before print average episode rewards
-#     # camera_position = np.array(env_cfg.viewer.pos, dtype=float64)
-#     # camera_vel = np.array([1., 1., 0.])
-#     #camera_direction = np.array(env_cfg.viewer.lookat) - np.array(env_cfg.viewer.pos)
-#     camera_direction = np.array([3,3, 3])
-#     img_idx = 0
-
-#     for i in range(10*int(env.max_episode_length)):
-#         actions = policy(obs.detach())
-#         obs, _, rews, dones, infos = env.step(actions.detach())
-#         if RECORD_FRAMES:
-#             if i % 2:
-#                 filename = os.path.join(LEGGED_GYM_ROOT_DIR, 'logs', train_cfg.runner.experiment_name, 'exported', 'frames', f"{img_idx}.png")
-#                 env.gym.write_viewer_image_to_file(env.viewer, filename)
-#                 img_idx += 1 
-#         if MOVE_CAMERA:
-#             camera_position = env.rb_com[0, 0, :] + torch.from_numpy(camera_direction)   
-#             env.set_camera(camera_position, env.rb_com[0, 0, :])
-
-#         if i < stop_state_log and i > start_state_log:            
-#             logger.log_states(
-#                 {
-#                     'dof_pos_target': actions[robot_index, joint_index].item() * env.cfg.control.action_scale,
-#                     'dof_pos': env.dof_pos[robot_index, joint_index].item(),
-#                     'dof_vel': env.dof_vel[robot_index, joint_index].item(),
-#                     'dof_torque': env.torques[robot_index, joint_index].item(),
-#                     'command_x': env.commands[robot_index, 0].item(),
-#                     'command_y': env.commands[robot_index, 1].item(),
-#                     'command_yaw': env.commands[robot_index, 2].item(),
-#                     'base_vel_x': env.base_lin_vel[robot_index, 0].item(),
-#                     'base_vel_y': env.base_lin_vel[robot_index, 1].item(),
-#                     'base_vel_z': env.base_lin_vel[robot_index, 2].item(),
-#                     'base_vel_yaw': env.base_ang_vel[robot_index, 2].item(),
-#                     'contact_forces_z': env.contact_forces[robot_index, env.feet_indices, 2].cpu().numpy(),
-#                 }
-#             )
-#         elif i==stop_state_log:
-#             logger.plot_states()
-#         if  0 < i < stop_rew_log:
-#             if infos["episode"]:
-#                 num_episodes = torch.sum(env.reset_buf).item()
-#                 if num_episodes>0:
-#                     logger.log_rewards(infos["episode"], num_episodes)
-#         elif i==stop_rew_log:
-#             logger.print_rewards()
 
 if __name__ == '__main__':
     EXPORT_POLICY = True
