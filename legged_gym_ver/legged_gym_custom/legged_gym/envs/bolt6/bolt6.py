@@ -54,10 +54,34 @@ class Bolt6(LeggedRobot):
         if self.num_privileged_obs is not None:
             self.dof_props = torch.zeros((self.num_dofs, 2), device=self.device, dtype=torch.float) # includes dof friction (0) and damping (1) for each environment
     
+    ###############################################################################
+    # Pseudo Code yet
+    # phase setup
+    def _get_phase_state(self):
+        phase_time = 0.6
+        phi = (phase_time % 1.0) * 2 * math.pi
+        swing_active = torch.exp(self.cfg.domain_rand.kappa * (torch.cos(phi) - 1))
+        return swing_active
+    
+    # phase reward on swing and stance -> mark # nofly and standstill
+    def _reward_phase(self):
+        self.stance_weight = 0.5
+        self.swing_weight = 0.5
+        swing_phase = self._get_phase_state()
+        # Reward for stance phase: minimize foot velocity, maximize foot force
+        stance_reward = self.stance_weight * torch.norm(self.contact_forces[:, self.feet_indices, 2]) * (0.5 - swing_phase) # 1step per 0.5sec
+        # Reward for swing phase: minimize foot force, allow foot velocity
+        swing_reward = self.swing_weight * torch.norm(self.contact_forces[:, self.feet_indices, 2]) * swing_phase 
+        
+        return stance_reward + swing_reward
+    ###############################################################################
+
+    ###############################################################################
     # penalize energy usage
     def _reward_energy(self):
         return torch.sum(self.torques * self.dof_vel, dim=-1)
         # return -torch.mean(torch.matmul(self.torques,self.dof_vel.T), dim=1)
+    ###############################################################################
     
     def _reward_no_fly(self):
         contacts = self.contact_forces[:, self.feet_indices, 2] > 0.001
@@ -175,6 +199,58 @@ class Bolt6(LeggedRobot):
             * (self._reward_feet_air_time() - self.rwd_feetAirTimePrev)
         return delta_phi / self.dt
 
+    def reset_idx(self, env_ids):
+        """ Reset some environments.
+            Calls self._reset_dofs(env_ids), self._reset_root_states(env_ids), and self._resample_commands(env_ids)
+            [Optional] calls self._update_terrain_curriculum(env_ids), self.update_command_curriculum(env_ids) and
+            Logs episode info
+            Resets some buffers
+
+        Args:
+            env_ids (list[int]): List of environment ids which must be reset
+        """
+        if len(env_ids) == 0:
+            return
+        # update curriculum
+        if self.cfg.terrain.curriculum:
+            self._update_terrain_curriculum(env_ids)
+        # avoid updating command curriculum at each step since the maximum command is common to all envs
+        if self.cfg.commands.curriculum and (self.common_step_counter % self.max_episode_length==0):
+            self.update_command_curriculum(env_ids)
+        
+        # reset robot states
+        self._reset_dofs(env_ids)
+        self._reset_root_states(env_ids)
+        self._resample_commands(env_ids)
+        
+        if hasattr(self, "_custom_reset"):
+            self._custom_reset(env_ids)
+            
+        # reset buffers
+        self.last_actions[env_ids] = 0.
+        self.last_dof_vel[env_ids] = 0.
+        self.feet_air_time[env_ids] = 0.
+        self.episode_length_buf[env_ids] = 0
+        self.reset_buf[env_ids] = 1
+        # fill extras
+        self.extras["episode"] = {}
+        for key in self.episode_sums.keys():
+            self.extras["episode"]['rew_' + key] = torch.mean(self.episode_sums[key][env_ids]) / self.max_episode_length_s# / self.reward_scales[key]
+            self.episode_sums[key][env_ids] = 0.
+        # log additional curriculum info
+        if self.cfg.terrain.curriculum:
+            self.extras["episode"]["terrain_level"] = torch.mean(self.terrain_levels.float())
+        if self.cfg.commands.curriculum:
+            self.extras["episode"]["max_command_x"] = self.command_ranges["lin_vel_x"][1]
+        # send timeout info to the algorithm
+        if self.cfg.env.send_timeouts:
+            self.extras["time_outs"] = self.time_out_buf
+
+        if self.cfg.ERFI.isERFI:
+            self.force_bias[env_ids, :] = torch.rand(env_ids.shape[0], self.num_actions, device = self.device) * self.cfg.ERFI.force_bias_scale
+        
+        if self.cfg.domain_rand.randomize_torque_constant:
+            self.torque_constant[env_ids] = 1 + (2*torch.rand((env_ids.shape[0], self.num_actions), device = self.device) -1)* self.cfg.domain_rand.torque_constant_range
 
 
     def _init_buffers(self):
@@ -204,6 +280,7 @@ class Bolt6(LeggedRobot):
         self.gravity_vec = to_torch(get_axis_params(-1., self.up_axis_idx), device=self.device).repeat((self.num_envs, 1))
         self.forward_vec = to_torch([1., 0., 0.], device=self.device).repeat((self.num_envs, 1))
         self.torques = torch.zeros(self.num_envs, self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
+        self.torque_constant = torch.ones_like(self.torques)
         self.p_gains = torch.zeros(self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
         self.d_gains = torch.zeros(self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
         self.actions = torch.zeros(self.num_envs, self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
@@ -399,9 +476,9 @@ class Bolt6(LeggedRobot):
             self.torques = self._compute_torques(self.actions).view(self.torques.shape) 
             self.gym.set_dof_actuation_force_tensor(self.sim, gymtorch.unwrap_tensor(self.torques)) 
             self.gym.simulate(self.sim)
-            print("------------TORQUES------------")
-            print(self.torques)
-            print("-------------------------------")
+            # print("------------TORQUES------------")
+            # print(self.torques)
+            # print("-------------------------------")
             
             # ## set custom state DEBUGGING
             # self.dof_pos[:, :] = 5
@@ -510,6 +587,33 @@ class Bolt6(LeggedRobot):
         #         print("shape ", i, " filter : ", self.gym.get_actor_rigid_shape_properties(self.envs[0], 0)[i].filter)
         #         print("shape ", i, " contact offset : ", self.gym.get_actor_rigid_shape_properties(self.envs[0], 0)[i].contact_offset)
                 # I guess the best I can try is set the shin's bitmasks as 0           
+
+    def _compute_torques(self, actions):
+        """ Compute torques from actions.
+            Actions can be interpreted as position or velocity targets given to a PD controller, or directly as scaled torques.
+            [NOTE]: torques must have the same dimension as the number of DOFs, even if some DOFs are not actuated.
+
+        Args:
+            actions (torch.Tensor): Actions
+
+        Returns:
+            [torch.Tensor]: Torques sent to the simulation
+        """
+        #pd controller
+        # actions_scaled = actions * self.cfg.control.action_scale      
+        # actions_scaled = torch.clamp(actions, min=-1., max=1.)                                                                                 
+        actions_scaled = torch.clamp(actions, min=-1., max=1.) #+ self.force_bias + torch.rand(actions.shape, device=self.device) * self.cfg.ERFI.force_noise_scale
+        control_type = self.cfg.control.control_type
+        if control_type=="P":
+            torques = self.p_gains*(actions_scaled + self.default_dof_pos - self.dof_pos) - self.d_gains*self.dof_vel
+        elif control_type=="V":
+            torques = self.p_gains*(actions_scaled - self.dof_vel) - self.d_gains*(self.dof_vel - self.last_dof_vel)/self.sim_params.dt
+        elif control_type=="T":
+            torques = actions_scaled * self.torque_limits[:self.num_actions] * self.torque_constant
+        else:
+            raise NameError(f"Unknown controller type: {control_type}")
+        return torch.clip(torques, -self.torque_limits, self.torque_limits)
+
 
 
     def _custom_parse_cfg(self, cfg):

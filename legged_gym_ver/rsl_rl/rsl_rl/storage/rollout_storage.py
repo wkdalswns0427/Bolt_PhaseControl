@@ -43,6 +43,7 @@ class RolloutStorage:
             self.dones = None
             self.values = None
             self.actions_log_prob = None
+            self.mu_actions_log_prob = None # WH
             self.action_mean = None
             self.action_sigma = None
             self.hidden_states = None
@@ -75,6 +76,7 @@ class RolloutStorage:
         self.advantages = torch.zeros(num_transitions_per_env, num_envs, 1, device=self.device)
         self.mu = torch.zeros(num_transitions_per_env, num_envs, *actions_shape, device=self.device)
         self.sigma = torch.zeros(num_transitions_per_env, num_envs, *actions_shape, device=self.device)
+        self.mu_actions_log_prob = torch.zeros(num_transitions_per_env, num_envs, 1, device=self.device) #WH
 
         self.num_transitions_per_env = num_transitions_per_env
         self.num_envs = num_envs
@@ -96,6 +98,7 @@ class RolloutStorage:
         self.values[self.step].copy_(transition.values)
         self.actions_log_prob[self.step].copy_(transition.actions_log_prob.view(-1, 1))
         self.mu[self.step].copy_(transition.action_mean)
+        self.mu_actions_log_prob[self.step].copy_(transition.mu_actions_log_prob.view(-1,1)) # WH
         self.sigma[self.step].copy_(transition.action_sigma)
         self._save_hidden_states(transition.hidden_states)
         self.step += 1
@@ -159,6 +162,7 @@ class RolloutStorage:
         values = self.values.flatten(0, 1)
         returns = self.returns.flatten(0, 1)
         old_actions_log_prob = self.actions_log_prob.flatten(0, 1)
+        mu_old_actions_log_prob = self.mu_actions_log_prob.flatten(0, 1)
         advantages = self.advantages.flatten(0, 1)
         old_mu = self.mu.flatten(0, 1)
         old_sigma = self.sigma.flatten(0, 1)
@@ -176,11 +180,14 @@ class RolloutStorage:
                 target_values_batch = values[batch_idx]
                 returns_batch = returns[batch_idx]
                 old_actions_log_prob_batch = old_actions_log_prob[batch_idx]
+                mu_old_actions_log_prob_batch = mu_old_actions_log_prob[batch_idx] # WH
                 advantages_batch = advantages[batch_idx]
                 old_mu_batch = old_mu[batch_idx]
                 old_sigma_batch = old_sigma[batch_idx]
+                # yield obs_batch, critic_observations_batch, actions_batch, target_values_batch, advantages_batch, returns_batch, \
+                    #    old_actions_log_prob_batch, old_mu_batch, old_sigma_batch, (None, None), None
                 yield obs_batch, critic_observations_batch, actions_batch, target_values_batch, advantages_batch, returns_batch, \
-                       old_actions_log_prob_batch, old_mu_batch, old_sigma_batch, (None, None), None
+                       old_actions_log_prob_batch, mu_old_actions_log_prob_batch, old_mu_batch, old_sigma_batch, (None, None), None # WH
 
     # for RNNs only
     def reccurent_mini_batch_generator(self, num_mini_batches, num_epochs=8):

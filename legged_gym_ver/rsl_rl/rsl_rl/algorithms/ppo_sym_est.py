@@ -50,12 +50,15 @@ class PPO_sym_est(PPO):
         else:
             generator = self.storage.mini_batch_generator(self.num_mini_batches, self.num_learning_epochs)
         #critic_obs_batch -> priviliged observation
-        for obs_batch, critic_obs_batch, actions_batch, target_values_batch, advantages_batch, returns_batch, old_actions_log_prob_batch, \
-            old_mu_batch, old_sigma_batch, hid_states_batch, masks_batch in generator:
+        # for obs_batch, critic_obs_batch, actions_batch, target_values_batch, advantages_batch, returns_batch, old_actions_log_prob_batch, \
+        #     old_mu_batch, old_sigma_batch, hid_states_batch, masks_batch in generator:
+        for obs_batch, critic_obs_batch, actions_batch, target_values_batch, advantages_batch, returns_batch, old_actions_log_prob_batch, mu_old_actions_log_prob_batch, \
+            old_mu_batch, old_sigma_batch, hid_states_batch, masks_batch in generator: # WH
             # The shape of an obs batch is : (minibatchsize, obs_shape)
                 # [24576, 120] : [24576, 24 * 5] 
                 self.actor_critic.act(obs_batch, masks=masks_batch, hidden_states=hid_states_batch[0])
                 actions_log_prob_batch = self.actor_critic.get_actions_log_prob(actions_batch)
+                mu_actions_log_prob_batch = self.actor_critic.get_actions_log_prob(old_mu_batch)
                 value_batch = self.actor_critic.evaluate(critic_obs_batch, masks=masks_batch, hidden_states=hid_states_batch[1])
                 mu_batch = self.actor_critic.action_mean
                 sigma_batch = self.actor_critic.action_std
@@ -172,9 +175,10 @@ class PPO_sym_est(PPO):
                 mirror_loss = torch.mean(torch.square(self.actor_critic.actor(obs_batch) - (self.mirror_act @ self.actor_critic.actor(mirror_obs_batch).unsqueeze(2)).squeeze())) 
             
                 # Surrogate loss
-                ratio = torch.exp(actions_log_prob_batch - torch.squeeze(old_actions_log_prob_batch))
-                surrogate = -torch.squeeze(advantages_batch) * ratio
-                surrogate_clipped = -torch.squeeze(advantages_batch) * torch.clamp(ratio, 1.0 - self.clip_param,
+                ratio_noisy = torch.exp(actions_log_prob_batch - torch.squeeze(old_actions_log_prob_batch))
+                # ratio_clean = torch.exp(mu_actions_log_prob_batch - torch.squeeze(mu_old_actions_log_prob_batch))
+                surrogate = -torch.squeeze(advantages_batch) * ratio_noisy
+                surrogate_clipped = -torch.squeeze(advantages_batch) * torch.clamp(ratio_noisy, 1.0 - self.clip_param,
                                                                                 1.0 + self.clip_param)
                 surrogate_loss = torch.max(surrogate, surrogate_clipped).mean()
 

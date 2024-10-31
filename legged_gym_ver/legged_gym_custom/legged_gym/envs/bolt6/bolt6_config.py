@@ -201,7 +201,7 @@ class Bolt6Cfg( LeggedRobotCfg ):
         friction_range = [0.05, 3.0] #[0.2, 1.5]
         randomize_base_mass = False
         added_mass_range = [-.5, .5]
-        push_robots = False
+        push_robots = True
         push_interval_s = 3
         max_push_vel_xy = .5    
         ext_force_robots = False
@@ -210,12 +210,13 @@ class Bolt6Cfg( LeggedRobotCfg ):
         ext_force_scale_range = (-10, 10)
         ext_force_interval_s = 2
         ext_force_duration_s = [0.3, 0.7]
-        randomize_dof_friction = False
+        randomize_dof_friction = True
         dof_friction_interval_s = 5
-        dof_friction = [0, 0.1] # https://forums.developer.nvidia.com/t/possible-bug-in-joint-friction-value-definition/208631
+        dof_friction = [0, 0.1] 
         dof_damping = [0, 0.003]
-        
-        
+        randomize_torque_constant = False
+        torque_constant_range = 0.2
+        kappa = 5.
         
 
     class rewards( LeggedRobotCfg.rewards ):
@@ -232,7 +233,7 @@ class Bolt6Cfg( LeggedRobotCfg ):
         class scales( LeggedRobotCfg.rewards.scales ):
             termination = -200.
             # traking
-            tracking_lin_vel = 10.
+            tracking_lin_vel = 20.
             tracking_ang_vel = 10.
 
             # regulation in task space
@@ -253,6 +254,7 @@ class Bolt6Cfg( LeggedRobotCfg ):
             no_fly = 0.0
             feet_contact_forces = -5. #10?
             energy = -1e-1
+            # phase = 1.
             
             # joint limits
             torque_limits = -0.01
@@ -267,12 +269,17 @@ class Bolt6Cfg( LeggedRobotCfg ):
             # PBRS rewards
             ori_pb = 5.0
             baseHeight_pb = 2.0 #3.
-            jointReg_pb =1.5
+            jointReg_pb =2.0
             action_rate_pb = 0.0
 
             stand_still_pb = 1.0
             no_fly_pb = 4.0
             feet_air_time_pb = 4. # 2.
+    
+    class ERFI:
+        isERFI = False
+        force_bias_scale = .001
+
 
     class normalization:
         class obs_scales:
@@ -332,7 +339,7 @@ class Bolt6CfgPPO( LeggedRobotCfgPPO ):
     seed = 1
     runner_class_name = 'OnPolicyRunnerHistoryEst'
     class policy:
-        init_noise_std = 1.0
+        init_noise_std = .5
         actor_hidden_dims =[512, 256, 128]# 
         critic_hidden_dims = [512, 256, 128]#
         state_estimator_hiden_size = [256,128, 64]
@@ -347,7 +354,7 @@ class Bolt6CfgPPO( LeggedRobotCfgPPO ):
         value_loss_coef = 1.0
         use_clipped_value_loss = True
         clip_param = 0.2
-        entropy_coef = 0.01
+        entropy_coef = 0.008 # 0.01
         num_learning_epochs = 5
         num_mini_batches = 4 # mini batch size = num_envs*nsteps / nminibatches
         learning_rate = 1.e-3 #5.e-4
@@ -380,7 +387,7 @@ class Bolt6CfgPPO( LeggedRobotCfgPPO ):
         policy_class_name = 'ActorCritic'
         algorithm_class_name = 'PPO_sym_est'
         num_steps_per_env = 24 # per iteration
-        max_iterations = 10000 # number of policy updates
+        max_iterations = 5000 # number of policy updates
         
         # Optional. Choose the length of state history for the algorithm to use.
         history_len = 10
