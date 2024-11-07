@@ -61,7 +61,7 @@ class Logger:
     def plot_states_mainthread(self, save_fig = False, save_dir = None):
         nb_rows = 3 # 3
         nb_cols = 3 # 3
-        fig, axs = plt.subplots(nb_rows, nb_cols)
+        fig, axs = plt.subplots(nb_rows, nb_cols,  figsize=(15, 15))
         for key, value in self.state_log.items():
             time = np.linspace(4., 4.+len(value)*self.dt, len(value))
             break
@@ -87,18 +87,21 @@ class Logger:
         if log["command_x"]: a.plot(time, log["command_x"], label='commanded')
         if log["sinusoid_command_x"]: a.plot(time, log["sinusoid_command_x"], label='sinusoid')
         a.set(xlabel='time [s]', ylabel='base lin vel [m/s]', title='Base velocity x')
+        a.axis(ymin=0.0,ymax=0.8)
         a.legend()
         # plot base vel y
         a = axs[0, 1]
         if log["base_vel_y"]: a.plot(time, log["base_vel_y"], label='measured')
         if log["command_y"]: a.plot(time, log["command_y"], label='commanded')
         a.set(xlabel='time [s]', ylabel='base lin vel [m/s]', title='Base velocity y')
+        a.axis(ymin=-0.8,ymax=0.0)
         a.legend()
         # plot base vel yaw
         a = axs[0, 2]
         if log["base_vel_yaw"]: a.plot(time, log["base_vel_yaw"], label='measured')
         if log["command_yaw"]: a.plot(time, log["command_yaw"], label='commanded')
         a.set(xlabel='time [s]', ylabel='base ang vel [rad/s]', title='Base velocity yaw')
+        a.axis(ymin=-1.6,ymax=-0.2)
         a.legend()
         # plot contact forces
         a = axs[2, 0]
@@ -164,18 +167,21 @@ class Logger:
         if log["base_vel_x"]: a.plot(time, log["base_vel_x"], label='measured')
         if log["command_x"]: a.plot(time, log["command_x"], label='commanded')
         a.set(xlabel='time [s]', ylabel='base lin vel [m/s]', title='Base velocity x')
+        a.ylim([0.0,0.8])
         a.legend()
         # plot base vel y
         a = axs[0, 1]
         if log["base_vel_y"]: a.plot(time, log["base_vel_y"], label='measured')
         if log["command_y"]: a.plot(time, log["command_y"], label='commanded')
         a.set(xlabel='time [s]', ylabel='base lin vel [m/s]', title='Base velocity y')
+        a.ylim([-0.8,0.0])
         a.legend()
         # plot base vel yaw
         a = axs[0, 2]
         if log["base_vel_yaw"]: a.plot(time, log["base_vel_yaw"], label='measured')
         if log["command_yaw"]: a.plot(time, log["command_yaw"], label='commanded')
         a.set(xlabel='time [s]', ylabel='base ang vel [rad/s]', title='Base velocity yaw')
+        a.ylim([-1.6,-0.2])
         a.legend()
         # plot contact forces
         a = axs[2, 0]

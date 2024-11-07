@@ -39,6 +39,11 @@ class LeggedRobotCfg(BaseConfig):
         env_spacing = 3.  # not used with heightfields/trimeshes 
         send_timeouts = True # send time out information to the algorithm
         episode_length_s = 20 # episode length in seconds
+    
+    class ERFI:
+        force_bias_scale = 0.1
+        force_noise_scale = 0.01
+
 
     class terrain:
         mesh_type = 'trimesh' # "heightfield" # none, plane, heightfield or trimesh
@@ -140,7 +145,7 @@ class LeggedRobotCfg(BaseConfig):
             dof_vel = -0.
             dof_acc = -2.5e-7
             base_height = -0. 
-            feet_air_time =  1.0
+            feet_air_time =  2.0
             collision = -1.
             feet_stumble = -0.0 
             action_rate = -0.01
@@ -234,7 +239,7 @@ class LeggedRobotCfgPPO(BaseConfig):
         num_steps_per_env = 24 # per iteration. Number of steps each robot takes per policy updates. May increase for better performance, but longer training time
         max_iterations = 1500 # number of policy updates
         history_len = 10
-
+        
         # logging
         save_interval = 50 # check for potential saves every this many iterations
         experiment_name = 'test'

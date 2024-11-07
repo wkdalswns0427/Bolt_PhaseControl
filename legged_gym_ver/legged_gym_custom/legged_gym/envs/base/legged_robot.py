@@ -67,8 +67,12 @@ class LeggedRobot(BaseTask):
         self.height_samples = None
         self.debug_viz = False
         self.init_done = False
+        self.ERFI = True
         self._parse_cfg(self.cfg) # reward scale comes from cfg file.
         super().__init__(self.cfg, sim_params, physics_engine, sim_device, headless)
+
+        if self.ERFI:
+            self.force_bias = torch.zeros(self.num_envs, self.num_actions, device=self.device)
 
         if not self.headless:
             self.set_camera(self.cfg.viewer.pos, self.cfg.viewer.lookat)
@@ -77,6 +81,7 @@ class LeggedRobot(BaseTask):
         self.init_done = True
         if hasattr(self, "_custom_init"):
             self._custom_init(cfg)
+
     def step(self, actions):
         """ Apply actions, simulate, call self.post_physics_step()
 
@@ -193,7 +198,11 @@ class LeggedRobot(BaseTask):
         # send timeout info to the algorithm
         if self.cfg.env.send_timeouts:
             self.extras["time_outs"] = self.time_out_buf
+
+        if self.ERFI:
+            self.force_bias[env_ids, :] = torch.rand(env_ids.shape[0], self.num_actions, device = self.device) * self.cfg.ERFI.force_bias_scale
     
+    # modify here for periodic reward composition
     def compute_reward(self):
         """ Compute rewards
             Calls each reward function which had a non-zero scale (processed in self._prepare_reward_function())
@@ -372,14 +381,16 @@ class LeggedRobot(BaseTask):
             [torch.Tensor]: Torques sent to the simulation
         """
         #pd controller
-        actions_scaled = actions * self.cfg.control.action_scale 
+        # actions_scaled = actions * self.cfg.control.action_scale      
+        # actions_scaled = torch.clamp(actions, min=-1., max=1.)                                                                                 
+        actions_scaled = torch.clamp(actions, min=-1., max=1.) #+ self.force_bias + torch.rand(actions.shape, device=self.device) * self.cfg.ERFI.force_noise_scale
         control_type = self.cfg.control.control_type
         if control_type=="P":
             torques = self.p_gains*(actions_scaled + self.default_dof_pos - self.dof_pos) - self.d_gains*self.dof_vel
         elif control_type=="V":
             torques = self.p_gains*(actions_scaled - self.dof_vel) - self.d_gains*(self.dof_vel - self.last_dof_vel)/self.sim_params.dt
         elif control_type=="T":
-            torques = actions_scaled
+            torques = actions_scaled * self.torque_limits[:self.num_actions]
         else:
             raise NameError(f"Unknown controller type: {control_type}")
         return torch.clip(torques, -self.torque_limits, self.torque_limits)

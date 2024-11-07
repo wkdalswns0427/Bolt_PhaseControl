@@ -254,7 +254,7 @@ class Bolt6Cfg( LeggedRobotCfg ):
             no_fly = 0.0
             feet_contact_forces = -6. #10?
             energy = -1e-1
-            # phase = 1.
+            phase = 1.
             
             # joint limits
             torque_limits = -0.01
@@ -277,7 +277,7 @@ class Bolt6Cfg( LeggedRobotCfg ):
             feet_air_time_pb = 4. # 2.
     
     class ERFI:
-        isERFI = False
+        isERFI = True
         force_bias_scale = .001
 
 
