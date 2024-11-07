@@ -216,7 +216,7 @@ class Bolt6Cfg( LeggedRobotCfg ):
         dof_damping = [0, 0.003]
         randomize_torque_constant = False
         torque_constant_range = 0.2
-        kappa = 5.
+        kappa = 3.
         
 
     class rewards( LeggedRobotCfg.rewards ):
@@ -233,7 +233,7 @@ class Bolt6Cfg( LeggedRobotCfg ):
         class scales( LeggedRobotCfg.rewards.scales ):
             termination = -200.
             # traking
-            tracking_lin_vel = 20.
+            tracking_lin_vel = 10.
             tracking_ang_vel = 10.
 
             # regulation in task space
@@ -252,7 +252,7 @@ class Bolt6Cfg( LeggedRobotCfg ):
             feet_stumble = -0.0 
             stand_still = 0.0
             no_fly = 0.0
-            feet_contact_forces = -5. #10?
+            feet_contact_forces = -6. #10?
             energy = -1e-1
             # phase = 1.
             
@@ -269,7 +269,7 @@ class Bolt6Cfg( LeggedRobotCfg ):
             # PBRS rewards
             ori_pb = 5.0
             baseHeight_pb = 2.0 #3.
-            jointReg_pb =2.0
+            jointReg_pb =3.
             action_rate_pb = 0.0
 
             stand_still_pb = 1.0

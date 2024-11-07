@@ -57,9 +57,10 @@ class Bolt6(LeggedRobot):
     ###############################################################################
     # Pseudo Code yet
     # phase setup
+    phase_duration = 0.5
     def _get_phase_state(self):
-        phase_time = 0.6
-        phi = (phase_time % 1.0) * 2 * math.pi
+        phase_time = 0.3
+        phi = (phase_time % phase_duration) * 2 * math.pi
         swing_active = torch.exp(self.cfg.domain_rand.kappa * (torch.cos(phi) - 1))
         return swing_active
     
@@ -69,9 +70,9 @@ class Bolt6(LeggedRobot):
         self.swing_weight = 0.5
         swing_phase = self._get_phase_state()
         # Reward for stance phase: minimize foot velocity, maximize foot force
-        stance_reward = self.stance_weight * torch.norm(self.contact_forces[:, self.feet_indices, 2]) * (0.5 - swing_phase) # 1step per 0.5sec
+        stance_reward = self.stance_weight * torch.norm(self.contact_forces[:, self.feet_indices, 2]) * (phase_duration - swing_phase) # 1step per 0.5sec
         # Reward for swing phase: minimize foot force, allow foot velocity
-        swing_reward = self.swing_weight * torch.norm(self.contact_forces[:, self.feet_indices, 2]) * swing_phase 
+        swing_reward = self.swing_weight * (phase_duration-torch.norm(self.contact_forces[:, self.feet_indices, 2])) * swing_phase 
         
         return stance_reward + swing_reward
     ###############################################################################
@@ -80,7 +81,6 @@ class Bolt6(LeggedRobot):
     # penalize energy usage
     def _reward_energy(self):
         return torch.sum(self.torques * self.dof_vel, dim=-1)
-        # return -torch.mean(torch.matmul(self.torques,self.dof_vel.T), dim=1)
     ###############################################################################
     
     def _reward_no_fly(self):
