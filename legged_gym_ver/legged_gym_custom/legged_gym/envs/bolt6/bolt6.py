@@ -53,15 +53,14 @@ class Bolt6(LeggedRobot):
         self.curriculum_index=0
         if self.num_privileged_obs is not None:
             self.dof_props = torch.zeros((self.num_dofs, 2), device=self.device, dtype=torch.float) # includes dof friction (0) and damping (1) for each environment
-    
+        self.sim_time = 0
     ###############################################################################
     # Pseudo Code yet
     # phase setup
     
     def _get_phase_state(self):
-        phase_time = 0.3
         self.phase_duration = 0.5
-        phi = (phase_time % self.phase_duration) * 2 * math.pi
+        phi = (self.sim_time % self.phase_duration) * 2 * math.pi
         swing_active = torch.exp(self.cfg.domain_rand.kappa * (torch.cos(torch.tensor([phi],device = self.device) - 1)))
         return swing_active
     
@@ -373,6 +372,7 @@ class Bolt6(LeggedRobot):
     def compute_observations(self):
         """ Computes observations
         """
+        self.sim_time += self.dt
         self.contacts = self.contact_forces[:, self.feet_indices, 2] > 0.001
         self.obs_buf = torch.cat((  
                                     self.projected_gravity,
