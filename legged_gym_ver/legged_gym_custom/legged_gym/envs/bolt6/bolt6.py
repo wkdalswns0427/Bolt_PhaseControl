@@ -59,22 +59,77 @@ class Bolt6(LeggedRobot):
     # phase setup
     
     def _get_phase_state(self):
-        self.phase_duration = 0.5
-        phi = (self.sim_time % self.phase_duration) * 2 * math.pi
-        swing_active = torch.exp(self.cfg.domain_rand.kappa * (torch.cos(torch.tensor([phi],device = self.device) - 1)))
-        return swing_active
+        self.phase_duration = 0.5 # Duration of one phase cycle
+        phi = (self.sim_time % self.phase_duration) / self.phase_duration # Normalize to [0, 1]
+
+        # Phase offsets for left and right feet
+        q_left = 0.0  # Left foot is the reference
+        q_right = 0.5  # Right foot is half a cycle offset (180 degrees)
+
+        # Compute expected phase activity using Von Mises distribution
+        phi_values = torch.linspace(0, 1, steps=100, device=self.device)  # Discretize phase space
+        kappa = self.cfg.domain_rand.kappa  # Concentration parameter for Von Mises distribution
+
+        # Left foot activity
+        von_mises_left = torch.exp(kappa * (torch.cos(2 * math.pi * (phi_values - (phi + q_left) % 1)) - 1))
+        von_mises_left /= torch.sum(von_mises_left)
+        swing_active_left = torch.sum(von_mises_left * torch.cos(2 * math.pi * phi_values))
+
+        # Right foot activity
+        von_mises_right = torch.exp(kappa * (torch.cos(2 * math.pi * (phi_values - (phi + q_right) % 1)) - 1))
+        von_mises_right /= torch.sum(von_mises_right)
+        swing_active_right = torch.sum(von_mises_right * torch.cos(2 * math.pi * phi_values))
+        
+        # swing_active = torch.exp(self.cfg.domain_rand.kappa * (torch.cos(torch.tensor([phi],device = self.device) - 1))) # Previous
+        return swing_active_left, swing_active_right
     
     # phase reward on swing and stance -> mark # nofly and standstill
     def _reward_phase(self):
         self.stance_weight = 0.5
         self.swing_weight = 0.5
-        swing_phase = self._get_phase_state()
-        # Reward for stance phase: minimize foot velocity, maximize foot force
-        stance_reward = self.stance_weight * torch.norm(self.contact_forces[:, self.feet_indices, 2]) * (self.phase_duration - swing_phase) # 1step per 0.5sec
-        # Reward for swing phase: minimize foot force, allow foot velocity
-        swing_reward = self.swing_weight * (self.phase_duration-torch.norm(self.contact_forces[:, self.feet_indices, 2])) * swing_phase 
         
-        return stance_reward + swing_reward
+        # Get phase activity for left and right feet
+        swing_active_left, swing_active_right = self._get_phase_state()
+        stance_active_left = 1.0 - swing_active_left
+        stance_active_right = 1.0 - swing_active_right
+        
+        # Norms of contact forces and velocities for each foot
+        left_foot_forces = torch.norm(self.contact_forces[:, self.feet_indices[0], 2])
+        right_foot_forces = torch.norm(self.contact_forces[:, self.feet_indices[1], 2])
+        left_foot_velocities = torch.zeros_like(left_foot_forces) # Temporarily set to zero
+        right_foot_velocities = torch.zeros_like(right_foot_forces) # Temporarily set to zero
+        # left_foot_velocities = torch.norm(self.contact_velocities[:, self.feet_indices[0], :], dim=1)
+        # right_foot_velocities = torch.norm(self.contact_velocities[:, self.feet_indices[1], :], dim=1)
+
+        # Rewards for stance and swing phases (left foot)
+        stance_reward_left = self.stance_weight * (
+            torch.sum(left_foot_forces * stance_active_left) - torch.sum(left_foot_velocities * stance_active_left)
+        )
+        swing_reward_left = self.swing_weight * (
+            torch.sum((1 - left_foot_forces) * swing_active_left) + torch.sum(left_foot_velocities * swing_active_left)
+        )
+    
+        # Rewards for stance and swing phases (right foot)
+        stance_reward_right = self.stance_weight * (
+            torch.sum(right_foot_forces * stance_active_right) - torch.sum(right_foot_velocities * stance_active_right)
+        )
+        swing_reward_right = self.swing_weight * (
+            torch.sum((1 - right_foot_forces) * swing_active_right) + torch.sum(right_foot_velocities * swing_active_right)
+        )
+
+        # Combine rewards
+        total_reward = stance_reward_left + swing_reward_left + stance_reward_right + swing_reward_right
+
+        # Previous
+        ###############################################################################
+        # Reward for stance phase: minimize foot velocity, maximize foot force
+        # stance_reward = self.stance_weight * torch.norm(self.contact_forces[:, self.feet_indices, 2]) * (self.phase_duration - swing_phase) # 1step per 0.5sec
+        # Reward for swing phase: minimize foot force, allow foot velocity
+        # swing_reward = self.swing_weight * (self.phase_duration-torch.norm(self.contact_forces[:, self.feet_indices, 2])) * swing_phase
+        # total_reward = stance_reward + swing_reward
+        ###############################################################################
+        
+        return total_reward
     ###############################################################################
 
     ###############################################################################
