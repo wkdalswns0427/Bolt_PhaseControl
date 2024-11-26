@@ -186,7 +186,8 @@ def custom_play(args):
     resume_dir = os.listdir(log_root)
     resume_dir.sort()
     if 'exported' in resume_dir: resume_dir.remove('exported')
-    SAVE_DIR = os.path.join(log_root, resume_dir[-1], 'data', 'plot.png')
+    # SAVE_DIR = os.path.join(log_root, resume_dir[-1], 'data', 'plot.png')
+    SAVE_DIR = os.path.join(log_root, train_cfg.runner.load_run, 'data', 'plot.png')
     open('data.txt', 'w')
     env.curriculum_index = 1
     set_seed(142142)
