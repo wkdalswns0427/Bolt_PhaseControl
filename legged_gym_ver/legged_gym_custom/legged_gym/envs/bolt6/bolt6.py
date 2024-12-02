@@ -53,29 +53,72 @@ class Bolt6(LeggedRobot):
         self.curriculum_index=0
         if self.num_privileged_obs is not None:
             self.dof_props = torch.zeros((self.num_dofs, 2), device=self.device, dtype=torch.float) # includes dof friction (0) and damping (1) for each environment
-    
+        self.sim_time = torch.zeros((self.num_envs, 1), device=self.device, dtype=torch.float)
     ###############################################################################
-    # Pseudo Code yet
     # phase setup
     
     def _get_phase_state(self):
-        phase_time = 0.3
-        self.phase_duration = 0.5
-        phi = (phase_time % self.phase_duration) * 2 * math.pi
-        swing_active = torch.exp(self.cfg.domain_rand.kappa * (torch.cos(torch.tensor([phi],device = self.device) - 1)))
-        return swing_active
+        self.phase_duration = 0.5 # Duration of one phase cycle
+        phi = (self.sim_time % self.phase_duration) / self.phase_duration # Normalize to [0, 1]
+        
+        # Phase offsets for left and right feet
+        theta_left = 0.0  # Left foot is the reference
+        theta_right = 0.5  # Right foot is half a cycle offset (180 degrees)
+        
+        # Compute expected phase activity using Von Mises distribution
+        kappa = self.cfg.domain_rand.kappa  # Concentration parameter for Von Mises distribution
+        # Helper function to compute P(A_i < f < B_i)
+        def compute_phase_probability(phi, theta):
+            phi_values_a = torch.linspace(theta - 0.5, theta + 0.5, steps=101, device=self.device).repeat(self.num_envs, 1)
+            phi_values_b = torch.linspace(theta, theta + 1, steps=101, device=self.device).repeat(self.num_envs, 1)
+            
+            von_mises_a = torch.exp(kappa * (torch.cos(2 * math.pi * (phi_values_a - theta))))
+            von_mises_a /= torch.sum(von_mises_a, dim=-1, keepdim=True)  # Normalize
+            # Create a mask for phi_values_a < phi for each environment
+            mask = phi_values_a < phi
+            p_a_less_phi = torch.sum(von_mises_a * mask, dim=-1)
+    
+            von_mises_b = torch.exp(kappa * (torch.cos(2 * math.pi * (phi_values_b - (theta + 0.5)))))
+            von_mises_b /= torch.sum(von_mises_b, dim=-1, keepdim=True)  # Normalize
+            # Create a mask for phi_values_a < phi for each environment
+            mask = phi_values_b < phi
+            p_b_less_phi = torch.sum(von_mises_b * mask, dim=-1)
+    
+            p_active = p_a_less_phi * (1 - p_b_less_phi)  # P(A_i < f < B_i)
+            return p_active
+            
+        # Compute probabilities for left and right feet
+        swing_active_left = compute_phase_probability(phi, theta_left)
+        swing_active_right = compute_phase_probability(phi, theta_right)
+    
+        stance_active_left = 1.0 - swing_active_left
+        stance_active_right = 1.0 - swing_active_right
+        
+        # swing_active = torch.exp(self.cfg.domain_rand.kappa * (torch.cos(torch.tensor([phi],device = self.device) - 1))) # Previous
+        return swing_active_left, swing_active_right, stance_active_left, stance_active_right
     
     # phase reward on swing and stance -> mark # nofly and standstill
-    def _reward_phase(self):
-        self.stance_weight = 0.5
-        self.swing_weight = 0.5
-        swing_phase = self._get_phase_state()
-        # Reward for stance phase: minimize foot velocity, maximize foot force
-        stance_reward = self.stance_weight * torch.norm(self.contact_forces[:, self.feet_indices, 2]) * (self.phase_duration - swing_phase) # 1step per 0.5sec
-        # Reward for swing phase: minimize foot force, allow foot velocity
-        swing_reward = self.swing_weight * (self.phase_duration-torch.norm(self.contact_forces[:, self.feet_indices, 2])) * swing_phase 
+    def _reward_phase(self):        
+        # Get phase activity for left and right feet
+        swing_active_left, swing_active_right, stance_active_left, stance_active_right = self._get_phase_state()
+        # Contact forces and speeds for each foot
+        left_foot_forces = self.contact_forces[:, self.feet_indices[0], 2]
+        right_foot_forces = self.contact_forces[:, self.feet_indices[1], 2]
+        left_foot_speeds = torch.abs(self.dof_vel[:, 2])
+        right_foot_speeds = torch.abs(self.dof_vel[:, 5])
         
-        return stance_reward + swing_reward
+        # Rewards for stance and swing phases (left foot)
+        stance_reward_left = stance_active_left * (-1) * left_foot_speeds
+        swing_reward_left = swing_active_left * (-1) * left_foot_forces
+    
+        # Rewards for stance and swing phases (right foot)
+        stance_reward_right = stance_active_right * (-1) * right_foot_speeds
+        swing_reward_right = swing_active_right * (-1) * right_foot_forces
+        
+        # Combine rewards
+        total_reward = stance_reward_left + swing_reward_left + stance_reward_right + swing_reward_right
+        
+        return total_reward
     ###############################################################################
 
     ###############################################################################
@@ -218,6 +261,9 @@ class Bolt6(LeggedRobot):
         # avoid updating command curriculum at each step since the maximum command is common to all envs
         if self.cfg.commands.curriculum and (self.common_step_counter % self.max_episode_length==0):
             self.update_command_curriculum(env_ids)
+
+        # reset sim time
+        self.sim_time[env_ids] = 0.
         
         # reset robot states
         self._reset_dofs(env_ids)
@@ -373,6 +419,7 @@ class Bolt6(LeggedRobot):
     def compute_observations(self):
         """ Computes observations
         """
+        self.sim_time += self.dt
         self.contacts = self.contact_forces[:, self.feet_indices, 2] > 0.001
         self.obs_buf = torch.cat((  
                                     self.projected_gravity,
